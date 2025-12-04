@@ -10,21 +10,46 @@ type AdminHandler struct {
 	svc *services.AdminService
 }
 
-func NewAdminHandler(svc *services.AdminService) *AdminHandler { return &AdminHandler{svc: svc} }
-
-func (h *AdminHandler) ListMerchants(c *fiber.Ctx) error {
-	return c.JSON(h.svc.ListMerchants(c.Context()))
+func NewAdminHandler(svc *services.AdminService) *AdminHandler {
+	return &AdminHandler{svc: svc}
 }
 
-func (h *AdminHandler) ApproveMerchant(c *fiber.Ctx) error {
+func (h *AdminHandler) ListPendingMerchants(c *fiber.Ctx) error {
+	merchants, err := h.svc.ListPendingMerchants(c.Context())
+	if err != nil {
+		return fiber.NewError(fiber.StatusInternalServerError, err.Error())
+	}
+	return c.JSON(merchants)
+}
+
+func (h *AdminHandler) ApproveMerchantKYC(c *fiber.Ctx) error {
 	id := c.Params("id")
-	return c.JSON(h.svc.ApproveMerchant(c.Context(), id))
+	return c.JSON(h.svc.ApproveMerchantKYC(c.Context(), id))
 }
 
-func (h *AdminHandler) SuspendMerchant(c *fiber.Ctx) error {
+func (h *AdminHandler) RejectMerchantKYC(c *fiber.Ctx) error {
 	id := c.Params("id")
-	return c.JSON(h.svc.SuspendMerchant(c.Context(), id))
+	return c.JSON(h.svc.RejectMerchantKYC(c.Context(), id))
 }
+
+func (h *AdminHandler) Transactions(c *fiber.Ctx) error {
+	return c.JSON(h.svc.Transactions(c.Context()))
+}
+
+func (h *AdminHandler) Stats(c *fiber.Ctx) error {
+	return c.JSON(h.svc.Stats(c.Context()))
+}
+
+// Register registers all admin routes
+func (h *AdminHandler) Register(app *fiber.App) {
+	admin := app.Group("/admin")
+	admin.Get("/merchants/pending", h.ListPendingMerchants)
+	admin.Post("/merchants/:id/approve", h.ApproveMerchantKYC)
+	admin.Post("/merchants/:id/reject", h.RejectMerchantKYC)
+	admin.Get("/transactions", h.Transactions)
+	admin.Get("/stats", h.Stats)
+}
+
 
 func (h *AdminHandler) Transactions(c *fiber.Ctx) error {
 	return c.JSON(h.svc.Transactions(c.Context()))

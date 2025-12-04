@@ -11,7 +11,7 @@ import (
 	"github.com/kodra-pay/admin-service/internal/services"
 )
 
-func Register(app *fiber.App, serviceName string) {
+func Register(app *fiber.App, serviceName string, merchantServiceURL string) {
 	// Health check
 	health := handlers.NewHealthHandler(serviceName)
 	health.Register(app)
@@ -35,7 +35,7 @@ func Register(app *fiber.App, serviceName string) {
 	}
 
 	// Initialize service
-	adminService := services.NewAdminService(repo)
+	adminService := services.NewAdminService(repo, merchantServiceURL)
 
 	// Initialize handlers
 	adminHandler := handlers.NewAdminHandler(adminService)

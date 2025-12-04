@@ -35,114 +35,53 @@ func (r *AdminRepository) Close() error {
 	return r.db.Close()
 }
 
-// ListMerchants retrieves all merchants with their stats
-func (r *AdminRepository) ListMerchants(ctx context.Context) ([]map[string]interface{}, error) {
+// GetStats retrieves platform statistics
+func (r *AdminRepository) GetStats(ctx context.Context) (map[string]interface{}, error) {
 	query := `
 		SELECT
-			m.id,
-			m.name,
-			m.email,
-			m.business_name,
-			m.status,
-			m.kyc_status,
-			m.country,
-			m.created_at,
+			COUNT(DISTINCT m.id) as total_merchants,
+			COUNT(DISTINCT CASE WHEN m.status = 'active' THEN m.id END) as active_merchants,
+			COUNT(DISTINCT CASE WHEN m.kyc_status = 'pending' THEN m.id END) as pending_kyc,
+			COUNT(t.id) as total_transactions,
 			COALESCE(SUM(CASE WHEN t.status = 'successful' THEN t.amount ELSE 0 END), 0) as total_volume,
-			COUNT(t.id) as transaction_count
+			COALESCE(SUM(CASE WHEN t.status = 'successful' AND t.created_at >= NOW() - INTERVAL '30 days' THEN t.amount ELSE 0 END), 0) as monthly_volume,
+			COUNT(CASE WHEN t.status = 'successful' THEN 1 END)::float / NULLIF(COUNT(t.id), 0) * 100 as success_rate
 		FROM merchants m
 		LEFT JOIN transactions t ON m.id = t.merchant_id
-		GROUP BY m.id, m.name, m.email, m.business_name, m.status, m.kyc_status, m.country, m.created_at
-		ORDER BY m.created_at DESC
 	`
 
-	rows, err := r.db.QueryContext(ctx, query)
+	var (
+		totalMerchants, activeMerchants, pendingKYC, totalTransactions int
+		totalVolume, monthlyVolume                                     int64
+		successRate                                                    sql.NullFloat64
+	)
+
+	err := r.db.QueryRowContext(ctx, query).Scan(
+		&totalMerchants, &activeMerchants, &pendingKYC,
+		&totalTransactions, &totalVolume, &monthlyVolume, &successRate,
+	)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
 
-	merchants := []map[string]interface{}{}
-	for rows.Next() {
-		var (
-			id, name, email, businessName, status, kycStatus, country string
-			createdAt                                                   time.Time
-			totalVolume, transactionCount                              int64
-		)
-
-		err := rows.Scan(
-			&id, &name, &email, &businessName, &status, &kycStatus, &country,
-			&createdAt, &totalVolume, &transactionCount,
-		)
-		if err != nil {
-			return nil, err
-		}
-
-		merchants = append(merchants, map[string]interface{}{
-			"id":                 id,
-			"name":               name,
-			"email":              email,
-			"business_name":      businessName,
-			"status":             status,
-			"kyc_status":         kycStatus,
-			"country":            country,
-			"created_at":         createdAt,
-			"total_volume":       totalVolume,
-			"transaction_count":  transactionCount,
-		})
+	stats := map[string]interface{}{
+		"total_merchants":     totalMerchants,
+		"active_merchants":    activeMerchants,
+		"pending_kyc":         pendingKYC,
+		"total_transactions":  totalTransactions,
+		"total_volume":        totalVolume,
+		"monthly_volume":      monthlyVolume,
+		"success_rate":        0.0,
+		"timestamp":           time.Now().UTC().Format(time.RFC3339),
 	}
 
-	return merchants, rows.Err()
+	if successRate.Valid {
+		stats["success_rate"] = successRate.Float64
+	}
+
+	return stats, nil
 }
 
-// ApproveMerchant approves a merchant's KYC
-func (r *AdminRepository) ApproveMerchant(ctx context.Context, id string) error {
-	query := `
-		UPDATE merchants
-		SET kyc_status = 'approved', status = 'active', updated_at = $2
-		WHERE id = $1
-	`
-
-	result, err := r.db.ExecContext(ctx, query, id, time.Now())
-	if err != nil {
-		return err
-	}
-
-	rowsAffected, err := result.RowsAffected()
-	if err != nil {
-		return err
-	}
-
-	if rowsAffected == 0 {
-		return fmt.Errorf("merchant not found")
-	}
-
-	return nil
-}
-
-// SuspendMerchant suspends a merchant
-func (r *AdminRepository) SuspendMerchant(ctx context.Context, id string) error {
-	query := `
-		UPDATE merchants
-		SET status = 'suspended', updated_at = $2
-		WHERE id = $1
-	`
-
-	result, err := r.db.ExecContext(ctx, query, id, time.Now())
-	if err != nil {
-		return err
-	}
-
-	rowsAffected, err := result.RowsAffected()
-	if err != nil {
-		return err
-	}
-
-	if rowsAffected == 0 {
-		return fmt.Errorf("merchant not found")
-	}
-
-	return nil
-}
 
 // GetTransactions retrieves recent transactions
 func (r *AdminRepository) GetTransactions(ctx context.Context, limit int) ([]map[string]interface{}, error) {

@@ -28,7 +28,7 @@ func main() {
 
 	app.Use(middleware.RequestID())
 
-	routes.Register(app, cfg.ServiceName)
+	routes.Register(app, cfg.ServiceName, cfg.MerchantServiceURL)
 
 	log.Printf("%s listening on :%s", cfg.ServiceName, cfg.Port)
 	if err := app.Listen(":" + cfg.Port); err != nil {
