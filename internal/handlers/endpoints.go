@@ -33,3 +33,13 @@ func (h *AdminHandler) Transactions(c *fiber.Ctx) error {
 func (h *AdminHandler) Stats(c *fiber.Ctx) error {
 	return c.JSON(h.svc.Stats(c.Context()))
 }
+
+// Register registers all admin routes
+func (h *AdminHandler) Register(app *fiber.App) {
+	admin := app.Group("/admin")
+	admin.Get("/merchants", h.ListMerchants)
+	admin.Post("/merchants/:id/approve", h.ApproveMerchant)
+	admin.Post("/merchants/:id/suspend", h.SuspendMerchant)
+	admin.Get("/transactions", h.Transactions)
+	admin.Get("/stats", h.Stats)
+}
