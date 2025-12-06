@@ -34,8 +34,14 @@ func Register(app *fiber.App, serviceName string, merchantServiceURL string) {
 		return
 	}
 
+	// Get compliance service URL from environment or use default
+	complianceServiceURL := os.Getenv("COMPLIANCE_SERVICE_URL")
+	if complianceServiceURL == "" {
+		complianceServiceURL = "http://compliance-service:7015"
+	}
+
 	// Initialize service
-	adminService := services.NewAdminService(repo, merchantServiceURL)
+	adminService := services.NewAdminService(repo, merchantServiceURL, complianceServiceURL)
 
 	// Initialize handlers
 	adminHandler := handlers.NewAdminHandler(adminService)

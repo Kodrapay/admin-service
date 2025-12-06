@@ -12,12 +12,17 @@ import (
 )
 
 type AdminService struct {
-	repo               *repositories.AdminRepository
-	MerchantServiceURL string
+	repo                *repositories.AdminRepository
+	MerchantServiceURL  string
+	ComplianceServiceURL string
 }
 
-func NewAdminService(repo *repositories.AdminRepository, merchantServiceURL string) *AdminService {
-	return &AdminService{repo: repo, MerchantServiceURL: merchantServiceURL}
+func NewAdminService(repo *repositories.AdminRepository, merchantServiceURL, complianceServiceURL string) *AdminService {
+	return &AdminService{
+		repo:                repo,
+		MerchantServiceURL:  merchantServiceURL,
+		ComplianceServiceURL: complianceServiceURL,
+	}
 }
 
 func (s *AdminService) ListMerchants(ctx context.Context) []map[string]interface{} {
@@ -61,11 +66,17 @@ func (s *AdminService) ListPendingMerchants(ctx context.Context) ([]map[string]i
 }
 
 func (s *AdminService) ApproveMerchantKYC(ctx context.Context, id string) map[string]string {
-	url := fmt.Sprintf("%s/merchants/%s/kyc-status", s.MerchantServiceURL, id)
-	body := map[string]string{"kyc_status": "completed"}
+	// Call compliance service to update KYC status
+	url := fmt.Sprintf("%s/kyc/update", s.ComplianceServiceURL)
+	body := map[string]interface{}{
+		"merchant_id":  id,
+		"status":       "approved",
+		"reviewer_id":  "550e8400-e29b-41d4-a716-446655440000", // Default admin reviewer UUID
+		"review_notes": "Approved by admin",
+	}
 	jsonBody, _ := json.Marshal(body)
 
-	req, err := http.NewRequestWithContext(ctx, "PUT", url, bytes.NewBuffer(jsonBody))
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonBody))
 	if err != nil {
 		return map[string]string{"id": id, "status": "error", "message": fmt.Sprintf("failed to create request: %s", err.Error())}
 	}
@@ -73,14 +84,15 @@ func (s *AdminService) ApproveMerchantKYC(ctx context.Context, id string) map[st
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return map[string]string{"id": id, "status": "error", "message": fmt.Sprintf("failed to call merchant service: %s", err.Error())}
+		return map[string]string{"id": id, "status": "error", "message": fmt.Sprintf("failed to call compliance service: %s", err.Error())}
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return map[string]string{"id": id, "status": "error", "message": fmt.Sprintf("merchant service returned non-ok status: %d", resp.StatusCode)}
+		return map[string]string{"id": id, "status": "error", "message": fmt.Sprintf("compliance service returned non-ok status: %d", resp.StatusCode)}
 	}
 
+	// The compliance service will automatically sync the merchant KYC status
 	// Additionally, activate the merchant account after KYC approval
 	activateURL := fmt.Sprintf("%s/merchants/%s/status", s.MerchantServiceURL, id)
 	activateBody := map[string]string{"status": "active"}
@@ -106,11 +118,17 @@ func (s *AdminService) ApproveMerchantKYC(ctx context.Context, id string) map[st
 }
 
 func (s *AdminService) RejectMerchantKYC(ctx context.Context, id string) map[string]string {
-	url := fmt.Sprintf("%s/merchants/%s/kyc-status", s.MerchantServiceURL, id)
-	body := map[string]string{"kyc_status": "rejected"}
+	// Call compliance service to update KYC status
+	url := fmt.Sprintf("%s/kyc/update", s.ComplianceServiceURL)
+	body := map[string]interface{}{
+		"merchant_id":  id,
+		"status":       "rejected",
+		"reviewer_id":  "550e8400-e29b-41d4-a716-446655440000", // Default admin reviewer UUID
+		"review_notes": "Rejected by admin",
+	}
 	jsonBody, _ := json.Marshal(body)
 
-	req, err := http.NewRequestWithContext(ctx, "PUT", url, bytes.NewBuffer(jsonBody))
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonBody))
 	if err != nil {
 		return map[string]string{"id": id, "status": "error", "message": fmt.Sprintf("failed to create request: %s", err.Error())}
 	}
@@ -118,14 +136,15 @@ func (s *AdminService) RejectMerchantKYC(ctx context.Context, id string) map[str
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return map[string]string{"id": id, "status": "error", "message": fmt.Sprintf("failed to call merchant service: %s", err.Error())}
+		return map[string]string{"id": id, "status": "error", "message": fmt.Sprintf("failed to call compliance service: %s", err.Error())}
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return map[string]string{"id": id, "status": "error", "message": fmt.Sprintf("merchant service returned non-ok status: %d", resp.StatusCode)}
+		return map[string]string{"id": id, "status": "error", "message": fmt.Sprintf("compliance service returned non-ok status: %d", resp.StatusCode)}
 	}
 
+	// The compliance service will automatically sync the merchant KYC status
 	return map[string]string{"id": id, "status": "rejected"}
 }
 

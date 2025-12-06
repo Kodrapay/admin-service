@@ -42,9 +42,20 @@ func (r *AdminRepository) ListMerchants(ctx context.Context, limit int) ([]map[s
 		limit = 100
 	}
 	query := `
-		SELECT id, name, email, business_name, status, kyc_status, created_at, updated_at
-		FROM merchants
-		ORDER BY created_at DESC
+		SELECT
+			m.id,
+			m.name,
+			m.email,
+			m.business_name,
+			m.status,
+			m.kyc_status,
+			m.created_at,
+			m.updated_at,
+			COALESCE(mb.total_volume, 0) as total_volume,
+			COALESCE(mb.currency, 'NGN') as currency
+		FROM merchants m
+		LEFT JOIN merchant_balances mb ON m.id = mb.merchant_id
+		ORDER BY m.created_at DESC
 		LIMIT $1
 	`
 	rows, err := r.db.QueryContext(ctx, query, limit)
@@ -56,10 +67,11 @@ func (r *AdminRepository) ListMerchants(ctx context.Context, limit int) ([]map[s
 	var merchants []map[string]interface{}
 	for rows.Next() {
 		var (
-			id, name, email, businessName, status, kycStatus string
-			createdAt, updatedAt                             time.Time
+			id, name, email, businessName, status, kycStatus, currency string
+			createdAt, updatedAt                                       time.Time
+			totalVolume                                                int64
 		)
-		if err := rows.Scan(&id, &name, &email, &businessName, &status, &kycStatus, &createdAt, &updatedAt); err != nil {
+		if err := rows.Scan(&id, &name, &email, &businessName, &status, &kycStatus, &createdAt, &updatedAt, &totalVolume, &currency); err != nil {
 			return nil, err
 		}
 		merchants = append(merchants, map[string]interface{}{
@@ -71,6 +83,8 @@ func (r *AdminRepository) ListMerchants(ctx context.Context, limit int) ([]map[s
 			"kyc_status":    kycStatus,
 			"created_at":    createdAt,
 			"updated_at":    updatedAt,
+			"total_volume":  totalVolume,
+			"currency":      currency,
 		})
 	}
 	return merchants, rows.Err()
