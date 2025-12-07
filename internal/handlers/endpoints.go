@@ -1,7 +1,7 @@
 package handlers
 
 import (
-	"log" // Added import
+	"log"
 	"github.com/gofiber/fiber/v2"
 
 	"github.com/kodra-pay/admin-service/internal/services"
@@ -16,7 +16,7 @@ func NewAdminHandler(svc *services.AdminService) *AdminHandler {
 }
 
 func (h *AdminHandler) ListPendingMerchants(c *fiber.Ctx) error {
-	log.Println("AdminHandler: ListPendingMerchants called.") // Added log
+	log.Println("AdminHandler: ListPendingMerchants called.")
 	merchants, err := h.svc.ListPendingMerchants(c.Context())
 	if err != nil {
 		return fiber.NewError(fiber.StatusInternalServerError, err.Error())
@@ -25,7 +25,7 @@ func (h *AdminHandler) ListPendingMerchants(c *fiber.Ctx) error {
 }
 
 func (h *AdminHandler) ApproveMerchantKYC(c *fiber.Ctx) error {
-	id, err := c.ParamsInt("id") // Use c.ParamsInt
+	id, err := c.ParamsInt("id")
 	if err != nil {
 		return fiber.NewError(fiber.StatusBadRequest, "Invalid merchant ID")
 	}
@@ -33,7 +33,7 @@ func (h *AdminHandler) ApproveMerchantKYC(c *fiber.Ctx) error {
 }
 
 func (h *AdminHandler) RejectMerchantKYC(c *fiber.Ctx) error {
-	id, err := c.ParamsInt("id") // Use c.ParamsInt
+	id, err := c.ParamsInt("id")
 	if err != nil {
 		return fiber.NewError(fiber.StatusBadRequest, "Invalid merchant ID")
 	}
@@ -41,7 +41,7 @@ func (h *AdminHandler) RejectMerchantKYC(c *fiber.Ctx) error {
 }
 
 func (h *AdminHandler) EnableMerchantKYC(c *fiber.Ctx) error {
-	id, err := c.ParamsInt("id") // Use c.ParamsInt
+	id, err := c.ParamsInt("id")
 	if err != nil {
 		return fiber.NewError(fiber.StatusBadRequest, "Invalid merchant ID")
 	}
@@ -49,7 +49,11 @@ func (h *AdminHandler) EnableMerchantKYC(c *fiber.Ctx) error {
 }
 
 func (h *AdminHandler) Transactions(c *fiber.Ctx) error {
-	return c.JSON(h.svc.Transactions(c.Context()))
+	transactions, err := h.svc.Transactions(c.Context())
+	if err != nil {
+		return fiber.NewError(fiber.StatusInternalServerError, err.Error())
+	}
+	return c.JSON(transactions)
 }
 
 func (h *AdminHandler) Stats(c *fiber.Ctx) error {
@@ -57,12 +61,25 @@ func (h *AdminHandler) Stats(c *fiber.Ctx) error {
 }
 
 func (h *AdminHandler) ListMerchants(c *fiber.Ctx) error {
-	log.Println("AdminHandler: ListMerchants called.") // Added log
-	return c.JSON(h.svc.ListMerchants(c.Context()))
+	log.Println("AdminHandler: ListMerchants called.")
+	merchants, err := h.svc.ListMerchants(c.Context())
+	if err != nil {
+		return fiber.NewError(fiber.StatusInternalServerError, err.Error())
+	}
+	return c.JSON(merchants)
+}
+
+func (h *AdminHandler) ListFraudulentTransactions(c *fiber.Ctx) error {
+	limit := c.QueryInt("limit", 50)
+	resp, err := h.svc.ListFraudulentTransactions(c.Context(), limit)
+	if err != nil {
+		return fiber.NewError(fiber.StatusInternalServerError, err.Error())
+	}
+	return c.JSON(resp)
 }
 
 func (h *AdminHandler) ApproveMerchant(c *fiber.Ctx) error {
-	id, err := c.ParamsInt("id") // Use c.ParamsInt
+	id, err := c.ParamsInt("id")
 	if err != nil {
 		return fiber.NewError(fiber.StatusBadRequest, "Invalid merchant ID")
 	}
@@ -70,7 +87,7 @@ func (h *AdminHandler) ApproveMerchant(c *fiber.Ctx) error {
 }
 
 func (h *AdminHandler) SuspendMerchant(c *fiber.Ctx) error {
-	id, err := c.ParamsInt("id") // Use c.ParamsInt
+	id, err := c.ParamsInt("id")
 	if err != nil {
 		return fiber.NewError(fiber.StatusBadRequest, "Invalid merchant ID")
 	}
@@ -88,5 +105,6 @@ func (h *AdminHandler) Register(app *fiber.App) {
 	admin.Post("/merchants/:id/kyc/reject", h.RejectMerchantKYC)
 	admin.Post("/merchants/:id/kyc/enable", h.EnableMerchantKYC)
 	admin.Get("/transactions", h.Transactions)
+	admin.Get("/transactions/fraud", h.ListFraudulentTransactions) // New route for fraudulent transactions
 	admin.Get("/stats", h.Stats)
 }

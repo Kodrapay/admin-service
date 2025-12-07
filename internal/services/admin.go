@@ -9,32 +9,40 @@ import (
 	"log"
 	"net/http"
 
+	"github.com/kodra-pay/admin-service/internal/clients" // Import clients
+	"github.com/kodra-pay/admin-service/internal/dto"     // Import dto
 	"github.com/kodra-pay/admin-service/internal/repositories"
 )
 
 type AdminService struct {
-	repo                *repositories.AdminRepository
-	MerchantServiceURL  string
+	repo                 *repositories.AdminRepository
+	MerchantServiceURL   string
 	ComplianceServiceURL string
+	TransactionClient    clients.TransactionClient // Add TransactionClient
 }
 
-func NewAdminService(repo *repositories.AdminRepository, merchantServiceURL, complianceServiceURL string) *AdminService {
+func NewAdminService(repo *repositories.AdminRepository, merchantServiceURL, complianceServiceURL string, txClient clients.TransactionClient) *AdminService {
 	return &AdminService{
-		repo:                repo,
-		MerchantServiceURL:  merchantServiceURL,
+		repo:                 repo,
+		MerchantServiceURL:   merchantServiceURL,
 		ComplianceServiceURL: complianceServiceURL,
+		TransactionClient:    txClient,
 	}
 }
 
-func (s *AdminService) ListMerchants(ctx context.Context) []map[string]interface{} {
+func (s *AdminService) ListFraudulentTransactions(ctx context.Context, limit int) (dto.TransactionListResponse, error) {
+	return s.TransactionClient.ListFraudulentTransactions(ctx, limit)
+}
+
+func (s *AdminService) ListMerchants(ctx context.Context) ([]map[string]interface{}, error) {
 	log.Println("AdminService: ListMerchants called.")
 	merchants, err := s.repo.ListMerchants(ctx, 200)
 	if err != nil {
 		log.Printf("ERROR: AdminService.ListMerchants - error from repository: %v", err)
-		return []map[string]interface{}{}
+		return nil, err // Return nil slice and error
 	}
 	log.Printf("DEBUG: AdminService.ListMerchants - merchants retrieved from repo: %d", len(merchants))
-	return merchants
+	return merchants, nil
 }
 
 func (s *AdminService) ListPendingMerchants(ctx context.Context) ([]map[string]interface{}, error) {
@@ -260,12 +268,12 @@ func (s *AdminService) SuspendMerchant(ctx context.Context, id int) map[string]i
 	return map[string]interface{}{"id": id, "status": "suspended"}
 }
 
-func (s *AdminService) Transactions(ctx context.Context) []map[string]interface{} {
+func (s *AdminService) Transactions(ctx context.Context) ([]map[string]interface{}, error) {
 	transactions, err := s.repo.GetTransactions(ctx, 100)
 	if err != nil {
-		return []map[string]interface{}{}
+		return nil, err
 	}
-	return transactions
+	return transactions, nil
 }
 
 func (s *AdminService) Stats(ctx context.Context) map[string]interface{} {

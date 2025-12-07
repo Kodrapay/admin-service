@@ -11,6 +11,8 @@ type Config struct {
 	PostgresDSN        string
 	RedisAddr          string
 	MerchantServiceURL string
+	ComplianceServiceURL string // Add ComplianceServiceURL
+	TransactionServiceURL string // Add TransactionServiceURL
 }
 
 func Load(serviceName, defaultPort string) Config {
@@ -28,6 +30,8 @@ func Load(serviceName, defaultPort string) Config {
 		PostgresDSN:        dsn,
 		RedisAddr:          getEnv("REDIS_ADDR", "redis:6379"),
 		MerchantServiceURL: getEnv("MERCHANT_SERVICE_URL", "http://merchant-service:7002"),
+		ComplianceServiceURL: getEnv("COMPLIANCE_SERVICE_URL", "http://compliance-service:7015"),
+		TransactionServiceURL: getEnv("TRANSACTION_SERVICE_URL", "http://transaction-service:7004"),
 	}
 }
 
