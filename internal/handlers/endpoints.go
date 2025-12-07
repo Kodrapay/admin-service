@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"log" // Added import
 	"github.com/gofiber/fiber/v2"
 
 	"github.com/kodra-pay/admin-service/internal/services"
@@ -15,6 +16,7 @@ func NewAdminHandler(svc *services.AdminService) *AdminHandler {
 }
 
 func (h *AdminHandler) ListPendingMerchants(c *fiber.Ctx) error {
+	log.Println("AdminHandler: ListPendingMerchants called.") // Added log
 	merchants, err := h.svc.ListPendingMerchants(c.Context())
 	if err != nil {
 		return fiber.NewError(fiber.StatusInternalServerError, err.Error())
@@ -23,17 +25,26 @@ func (h *AdminHandler) ListPendingMerchants(c *fiber.Ctx) error {
 }
 
 func (h *AdminHandler) ApproveMerchantKYC(c *fiber.Ctx) error {
-	id := c.Params("id")
+	id, err := c.ParamsInt("id") // Use c.ParamsInt
+	if err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, "Invalid merchant ID")
+	}
 	return c.JSON(h.svc.ApproveMerchantKYC(c.Context(), id))
 }
 
 func (h *AdminHandler) RejectMerchantKYC(c *fiber.Ctx) error {
-	id := c.Params("id")
+	id, err := c.ParamsInt("id") // Use c.ParamsInt
+	if err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, "Invalid merchant ID")
+	}
 	return c.JSON(h.svc.RejectMerchantKYC(c.Context(), id))
 }
 
 func (h *AdminHandler) EnableMerchantKYC(c *fiber.Ctx) error {
-	id := c.Params("id")
+	id, err := c.ParamsInt("id") // Use c.ParamsInt
+	if err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, "Invalid merchant ID")
+	}
 	return c.JSON(h.svc.EnableMerchantKYC(c.Context(), id))
 }
 
@@ -46,16 +57,23 @@ func (h *AdminHandler) Stats(c *fiber.Ctx) error {
 }
 
 func (h *AdminHandler) ListMerchants(c *fiber.Ctx) error {
+	log.Println("AdminHandler: ListMerchants called.") // Added log
 	return c.JSON(h.svc.ListMerchants(c.Context()))
 }
 
 func (h *AdminHandler) ApproveMerchant(c *fiber.Ctx) error {
-	id := c.Params("id")
+	id, err := c.ParamsInt("id") // Use c.ParamsInt
+	if err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, "Invalid merchant ID")
+	}
 	return c.JSON(h.svc.ApproveMerchant(c.Context(), id))
 }
 
 func (h *AdminHandler) SuspendMerchant(c *fiber.Ctx) error {
-	id := c.Params("id")
+	id, err := c.ParamsInt("id") // Use c.ParamsInt
+	if err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, "Invalid merchant ID")
+	}
 	return c.JSON(h.svc.SuspendMerchant(c.Context(), id))
 }
 

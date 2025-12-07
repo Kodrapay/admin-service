@@ -67,7 +67,8 @@ func (r *AdminRepository) ListMerchants(ctx context.Context, limit int) ([]map[s
 	var merchants []map[string]interface{}
 	for rows.Next() {
 		var (
-			id, name, email, businessName, status, kycStatus, currency string
+			id                                                         int // Changed from string to int
+			name, email, businessName, status, kycStatus, currency string
 			createdAt, updatedAt                                       time.Time
 			totalVolume                                                int64
 		)
@@ -75,7 +76,7 @@ func (r *AdminRepository) ListMerchants(ctx context.Context, limit int) ([]map[s
 			return nil, err
 		}
 		merchants = append(merchants, map[string]interface{}{
-			"id":            id,
+			"id":            id, // Changed to int
 			"name":          name,
 			"email":         email,
 			"business_name": businessName,
@@ -91,24 +92,24 @@ func (r *AdminRepository) ListMerchants(ctx context.Context, limit int) ([]map[s
 }
 
 // UpdateMerchantStatus updates the merchant status
-func (r *AdminRepository) UpdateMerchantStatus(ctx context.Context, id string, status string) error {
-	log.Printf("Attempting to update merchant status for ID: %s to status: %s", id, status)
+func (r *AdminRepository) UpdateMerchantStatus(ctx context.Context, id int, status string) error { // Changed id from string to int
+	log.Printf("Attempting to update merchant status for ID: %d to status: %s", id, status) // Changed %s to %d
 	query := `UPDATE merchants SET status = $2, updated_at = NOW() WHERE id = $1`
-	res, err := r.db.ExecContext(ctx, query, id, status)
+	res, err := r.db.ExecContext(ctx, query, id, status) // id is int
 	if err != nil {
-		log.Printf("Error updating merchant status for ID %s: %v", id, err)
+		log.Printf("Error updating merchant status for ID %d: %v", id, err) // Changed %s to %d
 		return err
 	}
 	affected, err := res.RowsAffected()
 	if err != nil {
-		log.Printf("Error getting rows affected after updating merchant status for ID %s: %v", id, err)
+		log.Printf("Error getting rows affected after updating merchant status for ID %d: %v", id, err) // Changed %s to %d
 		return err
 	}
 	if affected == 0 {
-		log.Printf("No merchant found with ID: %s or status was already %s", id, status)
+		log.Printf("No merchant found with ID: %d or status was already %s", id, status) // Changed %s to %d
 		return fmt.Errorf("merchant not found or status already %s", status)
 	}
-	log.Printf("Successfully updated merchant status for ID: %s to status: %s. Rows affected: %d", id, status, affected)
+	log.Printf("Successfully updated merchant status for ID: %d to status: %s. Rows affected: %d", id, status, affected) // Changed %s to %d
 	return nil
 }
 
@@ -118,7 +119,7 @@ func (r *AdminRepository) GetStats(ctx context.Context) (map[string]interface{},
 		SELECT
 			COUNT(DISTINCT m.id) as total_merchants,
 			COUNT(DISTINCT CASE WHEN m.status = 'active' THEN m.id END) as active_merchants,
-			COUNT(DISTINCT CASE WHEN m.kyc_status = 'pending' THEN m.id END) as pending_kyc,
+			COUNT(DISTINCT CASE WHEN m.kyc_status IN ('pending', 'not_started') OR m.status = 'inactive' THEN m.id END) as pending_kyc,
 			COUNT(t.id) as total_transactions,
 			COALESCE(SUM(CASE WHEN t.status = 'successful' THEN t.amount ELSE 0 END), 0) as total_volume,
 			COALESCE(SUM(CASE WHEN t.status = 'successful' AND t.created_at >= NOW() - INTERVAL '30 days' THEN t.amount ELSE 0 END), 0) as monthly_volume,
@@ -162,21 +163,42 @@ func (r *AdminRepository) GetStats(ctx context.Context) (map[string]interface{},
 // GetTransactions retrieves recent transactions
 func (r *AdminRepository) GetTransactions(ctx context.Context, limit int) ([]map[string]interface{}, error) {
 	query := `
-		SELECT
-			t.id,
-			t.reference,
-			t.merchant_id,
-			m.business_name as merchant_name,
-			t.customer_email,
-			t.customer_name,
-			t.amount,
-			t.currency,
-			t.status,
-			t.payment_method,
-			t.created_at
-		FROM transactions t
-		JOIN merchants m ON t.merchant_id = m.id
-		ORDER BY t.created_at DESC
+		SELECT * FROM (
+			SELECT
+				t.id,
+				t.reference,
+				t.merchant_id,
+				m.business_name as merchant_name,
+				t.customer_email,
+				t.customer_name,
+				t.amount,
+				t.currency,
+				t.status,
+				t.payment_method,
+				t.created_at,
+				'payment' as type
+			FROM transactions t
+			JOIN merchants m ON t.merchant_id = m.id
+			
+			UNION ALL
+			
+			SELECT
+				p.id,
+				p.reference,
+				p.merchant_id,
+				m.business_name as merchant_name,
+				'' as customer_email,
+				'' as customer_name,
+				p.amount,
+				p.currency,
+				p.status,
+				'payout' as payment_method,
+				p.created_at,
+				'payout' as type
+			FROM payouts p
+			JOIN merchants m ON p.merchant_id = m.id
+		) AS combined
+		ORDER BY created_at DESC
 		LIMIT $1
 	`
 
@@ -189,30 +211,32 @@ func (r *AdminRepository) GetTransactions(ctx context.Context, limit int) ([]map
 	transactions := []map[string]interface{}{}
 	for rows.Next() {
 		var (
-			id, reference, merchantID, merchantName, customerEmail, currency, status string
-			customerName, paymentMethod                                              sql.NullString
-			amount                                                                   int64
-			createdAt                                                                time.Time
+			id, merchantID                                                                    int // Changed from string to int
+			reference, merchantName, customerEmail, currency, status, txnType string
+			customerName, paymentMethod                                                       sql.NullString
+			amount                                                                            int64
+			createdAt                                                                         time.Time
 		)
 
 		err := rows.Scan(
 			&id, &reference, &merchantID, &merchantName, &customerEmail,
-			&customerName, &amount, &currency, &status, &paymentMethod, &createdAt,
+			&customerName, &amount, &currency, &status, &paymentMethod, &createdAt, &txnType,
 		)
 		if err != nil {
 			return nil, err
 		}
 
 		transaction := map[string]interface{}{
-			"id":             id,
+			"id":             id,         // Changed to int
 			"reference":      reference,
-			"merchant_id":    merchantID,
+			"merchant_id":    merchantID, // Changed to int
 			"merchant_name":  merchantName,
 			"customer_email": customerEmail,
 			"amount":         amount,
 			"currency":       currency,
 			"status":         status,
 			"created_at":     createdAt,
+			"type":           txnType,
 		}
 
 		if customerName.Valid {
@@ -227,3 +251,4 @@ func (r *AdminRepository) GetTransactions(ctx context.Context, limit int) ([]map
 
 	return transactions, rows.Err()
 }
+
