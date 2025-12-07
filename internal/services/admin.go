@@ -5,51 +5,78 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 
 	"github.com/kodra-pay/admin-service/internal/repositories"
 )
 
 type AdminService struct {
-	repo               *repositories.AdminRepository
-	MerchantServiceURL string
+	repo                *repositories.AdminRepository
+	MerchantServiceURL  string
+	ComplianceServiceURL string
 }
 
-func NewAdminService(repo *repositories.AdminRepository, merchantServiceURL string) *AdminService {
-	return &AdminService{repo: repo, MerchantServiceURL: merchantServiceURL}
+func NewAdminService(repo *repositories.AdminRepository, merchantServiceURL, complianceServiceURL string) *AdminService {
+	return &AdminService{
+		repo:                repo,
+		MerchantServiceURL:  merchantServiceURL,
+		ComplianceServiceURL: complianceServiceURL,
+	}
+}
+
+func (s *AdminService) ListMerchants(ctx context.Context) []map[string]interface{} {
+	merchants, err := s.repo.ListMerchants(ctx, 200)
+	if err != nil {
+		return []map[string]interface{}{}
+	}
+	return merchants
 }
 
 func (s *AdminService) ListPendingMerchants(ctx context.Context) ([]map[string]interface{}, error) {
-	url := fmt.Sprintf("%s/merchants/kyc?kyc_status=not_started,pending", s.MerchantServiceURL)
+	url := fmt.Sprintf("%s/merchants/kyc?kyc_status=pending", s.MerchantServiceURL)
+	log.Printf("AdminService: Calling Merchant Service for pending KYC: %s", url)
+
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
+		log.Printf("AdminService: Failed to create request for pending KYC: %v", err)
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
+		log.Printf("AdminService: Failed to call Merchant Service for pending KYC: %v", err)
 		return nil, fmt.Errorf("failed to call merchant service: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
+		log.Printf("AdminService: Merchant Service returned non-OK status for pending KYC: %d", resp.StatusCode)
 		return nil, fmt.Errorf("merchant service returned non-ok status: %d", resp.StatusCode)
 	}
 
 	var merchants []map[string]interface{}
 	if err := json.NewDecoder(resp.Body).Decode(&merchants); err != nil {
+		log.Printf("AdminService: Failed to decode response from Merchant Service for pending KYC: %v", err)
 		return nil, fmt.Errorf("failed to decode response from merchant service: %w", err)
 	}
 
+	log.Printf("AdminService: Successfully retrieved %d pending merchants from Merchant Service", len(merchants))
 	return merchants, nil
 }
 
 func (s *AdminService) ApproveMerchantKYC(ctx context.Context, id string) map[string]string {
-	url := fmt.Sprintf("%s/merchants/%s/kyc-status", s.MerchantServiceURL, id)
-	body := map[string]string{"kyc_status": "approved"}
+	// Call compliance service to update KYC status
+	url := fmt.Sprintf("%s/kyc/update", s.ComplianceServiceURL)
+	body := map[string]interface{}{
+		"merchant_id":  id,
+		"status":       "approved",
+		"reviewer_id":  "550e8400-e29b-41d4-a716-446655440000", // Default admin reviewer UUID
+		"review_notes": "Approved by admin",
+	}
 	jsonBody, _ := json.Marshal(body)
 
-	req, err := http.NewRequestWithContext(ctx, "PUT", url, bytes.NewBuffer(jsonBody))
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonBody))
 	if err != nil {
 		return map[string]string{"id": id, "status": "error", "message": fmt.Sprintf("failed to create request: %s", err.Error())}
 	}
@@ -57,14 +84,15 @@ func (s *AdminService) ApproveMerchantKYC(ctx context.Context, id string) map[st
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return map[string]string{"id": id, "status": "error", "message": fmt.Sprintf("failed to call merchant service: %s", err.Error())}
+		return map[string]string{"id": id, "status": "error", "message": fmt.Sprintf("failed to call compliance service: %s", err.Error())}
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return map[string]string{"id": id, "status": "error", "message": fmt.Sprintf("merchant service returned non-ok status: %d", resp.StatusCode)}
+		return map[string]string{"id": id, "status": "error", "message": fmt.Sprintf("compliance service returned non-ok status: %d", resp.StatusCode)}
 	}
 
+	// The compliance service will automatically sync the merchant KYC status
 	// Additionally, activate the merchant account after KYC approval
 	activateURL := fmt.Sprintf("%s/merchants/%s/status", s.MerchantServiceURL, id)
 	activateBody := map[string]string{"status": "active"}
@@ -90,8 +118,40 @@ func (s *AdminService) ApproveMerchantKYC(ctx context.Context, id string) map[st
 }
 
 func (s *AdminService) RejectMerchantKYC(ctx context.Context, id string) map[string]string {
+	// Call compliance service to update KYC status
+	url := fmt.Sprintf("%s/kyc/update", s.ComplianceServiceURL)
+	body := map[string]interface{}{
+		"merchant_id":  id,
+		"status":       "rejected",
+		"reviewer_id":  "550e8400-e29b-41d4-a716-446655440000", // Default admin reviewer UUID
+		"review_notes": "Rejected by admin",
+	}
+	jsonBody, _ := json.Marshal(body)
+
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonBody))
+	if err != nil {
+		return map[string]string{"id": id, "status": "error", "message": fmt.Sprintf("failed to create request: %s", err.Error())}
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return map[string]string{"id": id, "status": "error", "message": fmt.Sprintf("failed to call compliance service: %s", err.Error())}
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return map[string]string{"id": id, "status": "error", "message": fmt.Sprintf("compliance service returned non-ok status: %d", resp.StatusCode)}
+	}
+
+	// The compliance service will automatically sync the merchant KYC status
+	return map[string]string{"id": id, "status": "rejected"}
+}
+
+func (s *AdminService) EnableMerchantKYC(ctx context.Context, id string) map[string]string {
+	// Update KYC status to pending to allow merchant to proceed with KYC
 	url := fmt.Sprintf("%s/merchants/%s/kyc-status", s.MerchantServiceURL, id)
-	body := map[string]string{"kyc_status": "rejected"}
+	body := map[string]string{"kyc_status": "pending"}
 	jsonBody, _ := json.Marshal(body)
 
 	req, err := http.NewRequestWithContext(ctx, "PUT", url, bytes.NewBuffer(jsonBody))
@@ -110,7 +170,84 @@ func (s *AdminService) RejectMerchantKYC(ctx context.Context, id string) map[str
 		return map[string]string{"id": id, "status": "error", "message": fmt.Sprintf("merchant service returned non-ok status: %d", resp.StatusCode)}
 	}
 
-	return map[string]string{"id": id, "status": "rejected"}
+	// Also update merchant status to pending if inactive
+	statusURL := fmt.Sprintf("%s/merchants/%s/status", s.MerchantServiceURL, id)
+	statusBody := map[string]string{"status": "pending"}
+	jsonStatusBody, _ := json.Marshal(statusBody)
+
+	statusReq, err := http.NewRequestWithContext(ctx, "PUT", statusURL, bytes.NewBuffer(jsonStatusBody))
+	if err != nil {
+		log.Printf("Warning: Failed to update merchant status: %v", err)
+	} else {
+		statusReq.Header.Set("Content-Type", "application/json")
+		statusResp, err := http.DefaultClient.Do(statusReq)
+		if err != nil {
+			log.Printf("Warning: Failed to call merchant service for status update: %v", err)
+		} else {
+			defer statusResp.Body.Close()
+			if statusResp.StatusCode != http.StatusOK {
+				log.Printf("Warning: Merchant service status update returned: %d", statusResp.StatusCode)
+			}
+		}
+	}
+
+	return map[string]string{"id": id, "status": "enabled"}
+}
+
+func (s *AdminService) ApproveMerchant(ctx context.Context, id string) map[string]string {
+	// First, update KYC status to completed
+	url := fmt.Sprintf("%s/merchants/%s/kyc-status", s.MerchantServiceURL, id)
+	body := map[string]string{"kyc_status": "completed"}
+	jsonBody, _ := json.Marshal(body)
+
+	req, err := http.NewRequestWithContext(ctx, "PUT", url, bytes.NewBuffer(jsonBody))
+	if err != nil {
+		return map[string]string{"id": id, "status": "error", "message": fmt.Sprintf("failed to create KYC request: %s", err.Error())}
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return map[string]string{"id": id, "status": "error", "message": fmt.Sprintf("failed to update KYC status: %s", err.Error())}
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return map[string]string{"id": id, "status": "error", "message": fmt.Sprintf("merchant service KYC update returned status: %d", resp.StatusCode)}
+	}
+
+	// Then, update merchant status to active
+	statusURL := fmt.Sprintf("%s/merchants/%s/status", s.MerchantServiceURL, id)
+	statusBody := map[string]string{"status": "active"}
+	jsonStatusBody, _ := json.Marshal(statusBody)
+
+	statusReq, err := http.NewRequestWithContext(ctx, "PUT", statusURL, bytes.NewBuffer(jsonStatusBody))
+	if err != nil {
+		return map[string]string{"id": id, "status": "error", "message": fmt.Sprintf("failed to create status request: %s", err.Error())}
+	}
+	statusReq.Header.Set("Content-Type", "application/json")
+
+	statusResp, err := http.DefaultClient.Do(statusReq)
+	if err != nil {
+		return map[string]string{"id": id, "status": "error", "message": fmt.Sprintf("failed to update status: %s", err.Error())}
+	}
+	defer statusResp.Body.Close()
+
+	if statusResp.StatusCode != http.StatusOK {
+		return map[string]string{"id": id, "status": "error", "message": fmt.Sprintf("merchant service status update returned: %d", statusResp.StatusCode)}
+	}
+
+	return map[string]string{"id": id, "status": "active"}
+}
+
+func (s *AdminService) SuspendMerchant(ctx context.Context, id string) map[string]string {
+	log.Printf("AdminService: Attempting to suspend merchant with ID: %s", id)
+	if err := s.repo.UpdateMerchantStatus(ctx, id, "suspended"); err != nil {
+		log.Printf("AdminService: Failed to suspend merchant %s: %v", id, err)
+		return map[string]string{"id": id, "status": "error", "message": err.Error()}
+	}
+	log.Printf("AdminService: Successfully suspended merchant with ID: %s", id)
+	return map[string]string{"id": id, "status": "suspended"}
 }
 
 func (s *AdminService) Transactions(ctx context.Context) []map[string]interface{} {
