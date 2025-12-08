@@ -1,0 +1,24 @@
+package dto
+
+import "time"
+
+// TransactionResponse DTO for returning transaction information
+type TransactionResponse struct {
+	ID            int       `json:"id"`
+	Reference     string    `json:"reference"`
+	MerchantID    int       `json:"merchant_id"`
+	CustomerEmail string    `json:"customer_email"`
+	CustomerID    int       `json:"customer_id"`
+	CustomerName  string    `json:"customer_name,omitempty"`
+	Amount        int64     `json:"amount"`
+	Currency      string    `json:"currency"`
+	Status        string    `json:"status"`
+	Description   string    `json:"description,omitempty"`
+	CreatedAt     time.Time `json:"created_at"`
+}
+
+// TransactionListResponse DTO for returning a list of transactions
+type TransactionListResponse struct {
+	Transactions []TransactionResponse `json:"transactions"`
+	Total        int                   `json:"total"`
+}

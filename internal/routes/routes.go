@@ -2,10 +2,11 @@ package routes
 
 import (
 	"log"
-	"os"
-	"strings"
 
 	"github.com/gofiber/fiber/v2"
+
+	"github.com/kodra-pay/admin-service/internal/clients" // Import clients
+	"github.com/kodra-pay/admin-service/internal/config"
 	"github.com/kodra-pay/admin-service/internal/handlers"
 	"github.com/kodra-pay/admin-service/internal/repositories"
 	"github.com/kodra-pay/admin-service/internal/services"
@@ -17,31 +18,20 @@ func Register(app *fiber.App, serviceName string, merchantServiceURL string) {
 	health.Register(app)
 
 	// Get database URL from environment
-	dbURL := os.Getenv("POSTGRES_URL")
-	if dbURL == "" {
-		dbURL = "postgres://kodrapay:kodrapay_password@localhost:5432/kodrapay?sslmode=disable"
-	} else {
-		// Add sslmode=disable if not already present
-		if !strings.Contains(dbURL, "sslmode=") {
-			dbURL = dbURL + "?sslmode=disable"
-		}
-	}
+	cfg := config.Load(serviceName, "7003") // Load config here
 
 	// Initialize repository
-	repo, err := repositories.NewAdminRepository(dbURL)
+	repo, err := repositories.NewAdminRepository(cfg.PostgresDSN)
 	if err != nil {
 		log.Printf("Warning: Failed to connect to database: %v. Using stub implementation.", err)
 		return
 	}
 
-	// Get compliance service URL from environment or use default
-	complianceServiceURL := os.Getenv("COMPLIANCE_SERVICE_URL")
-	if complianceServiceURL == "" {
-		complianceServiceURL = "http://compliance-service:7015"
-	}
+	// Initialize clients
+	txClient := clients.NewHTTPTransactionClient(cfg.TransactionServiceURL)
 
 	// Initialize service
-	adminService := services.NewAdminService(repo, merchantServiceURL, complianceServiceURL)
+	adminService := services.NewAdminService(repo, cfg.MerchantServiceURL, cfg.ComplianceServiceURL, txClient)
 
 	// Initialize handlers
 	adminHandler := handlers.NewAdminHandler(adminService)

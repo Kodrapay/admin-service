@@ -35,4 +35,5 @@ Thumbs.db
 # Build
 dist/
 build/
-
+*.cache
+admin-service
