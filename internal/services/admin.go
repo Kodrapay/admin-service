@@ -34,6 +34,72 @@ func (s *AdminService) ListFraudulentTransactions(ctx context.Context, limit int
 	return s.TransactionClient.ListFraudulentTransactions(ctx, limit)
 }
 
+func (s *AdminService) ApproveTransaction(ctx context.Context, reference string) error {
+	return s.TransactionClient.UpdateTransactionStatus(ctx, reference, "success")
+}
+
+func (s *AdminService) DeclineTransaction(ctx context.Context, reference string) error {
+	return s.TransactionClient.UpdateTransactionStatus(ctx, reference, "failed")
+}
+
+// TriggerSettlement fetches pending balance for a merchant and settles it immediately.
+func (s *AdminService) TriggerSettlement(ctx context.Context, merchantID int, currency string) error {
+	if merchantID <= 0 {
+		return fmt.Errorf("invalid merchant_id")
+	}
+	if currency == "" {
+		currency = "NGN"
+	}
+
+	// Fetch balance
+	balanceURL := fmt.Sprintf("%s/merchants/%d/balance?currency=%s", s.MerchantServiceURL, merchantID, currency)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, balanceURL, nil)
+	if err != nil {
+		return fmt.Errorf("build balance request: %w", err)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("call balance endpoint: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("balance endpoint returned %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
+	}
+	var balance struct {
+		Pending float64 `json:"pending_balance"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&balance); err != nil {
+		return fmt.Errorf("decode balance: %w", err)
+	}
+	if balance.Pending <= 0 {
+		return nil
+	}
+
+	// Call settle with pending amount
+	settleURL := fmt.Sprintf("%s/internal/balance/settle", s.MerchantServiceURL)
+	bodyBytes, _ := json.Marshal(map[string]interface{}{
+		"merchant_id": merchantID,
+		"currency":    currency,
+		"amount":      balance.Pending,
+	})
+	setReq, err := http.NewRequestWithContext(ctx, http.MethodPost, settleURL, bytes.NewBuffer(bodyBytes))
+	if err != nil {
+		return fmt.Errorf("build settle request: %w", err)
+	}
+	setReq.Header.Set("Content-Type", "application/json")
+	setResp, err := http.DefaultClient.Do(setReq)
+	if err != nil {
+		return fmt.Errorf("call settle endpoint: %w", err)
+	}
+	defer setResp.Body.Close()
+	if setResp.StatusCode >= 300 {
+		body, _ := io.ReadAll(setResp.Body)
+		return fmt.Errorf("settle endpoint returned %d: %s", setResp.StatusCode, strings.TrimSpace(string(body)))
+	}
+	return nil
+}
+
 func (s *AdminService) ListMerchants(ctx context.Context) ([]map[string]interface{}, error) {
 	log.Println("AdminService: ListMerchants called.")
 	merchants, err := s.repo.ListMerchants(ctx, 200)

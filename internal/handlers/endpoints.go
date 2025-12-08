@@ -1,8 +1,8 @@
 package handlers
 
 import (
-	"log"
 	"github.com/gofiber/fiber/v2"
+	"log"
 
 	"github.com/kodra-pay/admin-service/internal/services"
 )
@@ -78,6 +78,49 @@ func (h *AdminHandler) ListFraudulentTransactions(c *fiber.Ctx) error {
 	return c.JSON(resp)
 }
 
+func (h *AdminHandler) ApproveTransaction(c *fiber.Ctx) error {
+	ref := c.Params("reference")
+	if ref == "" {
+		return fiber.NewError(fiber.StatusBadRequest, "reference is required")
+	}
+	if err := h.svc.ApproveTransaction(c.Context(), ref); err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, err.Error())
+	}
+	return c.SendStatus(fiber.StatusNoContent)
+}
+
+func (h *AdminHandler) DeclineTransaction(c *fiber.Ctx) error {
+	ref := c.Params("reference")
+	if ref == "" {
+		return fiber.NewError(fiber.StatusBadRequest, "reference is required")
+	}
+	if err := h.svc.DeclineTransaction(c.Context(), ref); err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, err.Error())
+	}
+	return c.SendStatus(fiber.StatusNoContent)
+}
+
+func (h *AdminHandler) TriggerSettlement(c *fiber.Ctx) error {
+	var payload struct {
+		MerchantID int    `json:"merchant_id"`
+		Currency   string `json:"currency"`
+	}
+	if err := c.BodyParser(&payload); err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, "invalid request body")
+	}
+	if payload.MerchantID <= 0 {
+		return fiber.NewError(fiber.StatusBadRequest, "merchant_id is required")
+	}
+	if payload.Currency == "" {
+		payload.Currency = "NGN"
+	}
+
+	if err := h.svc.TriggerSettlement(c.Context(), payload.MerchantID, payload.Currency); err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, err.Error())
+	}
+	return c.SendStatus(fiber.StatusNoContent)
+}
+
 func (h *AdminHandler) ApproveMerchant(c *fiber.Ctx) error {
 	id, err := c.ParamsInt("id")
 	if err != nil {
@@ -106,5 +149,8 @@ func (h *AdminHandler) Register(app *fiber.App) {
 	admin.Post("/merchants/:id/kyc/enable", h.EnableMerchantKYC)
 	admin.Get("/transactions", h.Transactions)
 	admin.Get("/transactions/fraud", h.ListFraudulentTransactions) // New route for fraudulent transactions
+	admin.Post("/transactions/:reference/approve", h.ApproveTransaction)
+	admin.Post("/transactions/:reference/decline", h.DeclineTransaction)
+	admin.Post("/settlements/trigger", h.TriggerSettlement)
 	admin.Get("/stats", h.Stats)
 }
