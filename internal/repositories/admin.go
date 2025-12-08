@@ -227,12 +227,12 @@ func (r *AdminRepository) GetTransactions(ctx context.Context, limit int) ([]map
 		}
 
 		transaction := map[string]interface{}{
-			"id":             id,         // Changed to int
+			"id":             id,
 			"reference":      reference,
-			"merchant_id":    merchantID, // Changed to int
+			"merchant_id":    merchantID,
 			"merchant_name":  merchantName,
 			"customer_email": customerEmail,
-			"amount":         amount,
+			"amount":         float64(amount) / 100, // return currency units
 			"currency":       currency,
 			"status":         status,
 			"created_at":     createdAt,
@@ -251,4 +251,3 @@ func (r *AdminRepository) GetTransactions(ctx context.Context, limit int) ([]map
 
 	return transactions, rows.Err()
 }
-
