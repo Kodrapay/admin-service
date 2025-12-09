@@ -8,6 +8,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"strings"
 
 	"github.com/kodra-pay/admin-service/internal/clients" // Import clients
 	"github.com/kodra-pay/admin-service/internal/dto"     // Import dto
@@ -356,4 +357,49 @@ func (s *AdminService) Stats(ctx context.Context) map[string]interface{} {
 		}
 	}
 	return stats
+}
+
+// GetTotalPendingSettlements fetches all merchants and sums their pending balances.
+func (s *AdminService) GetTotalPendingSettlements(ctx context.Context) (int64, error) {
+	// Get all merchants
+	merchants, err := s.repo.ListMerchants(ctx, 1000)
+	if err != nil {
+		return 0, fmt.Errorf("list merchants: %w", err)
+	}
+
+	var totalPending int64
+	for _, m := range merchants {
+		merchantID, ok := m["id"].(int)
+		if !ok {
+			continue
+		}
+
+		// Fetch balance for this merchant
+		balanceURL := fmt.Sprintf("%s/merchants/%d/balance", s.MerchantServiceURL, merchantID)
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, balanceURL, nil)
+		if err != nil {
+			log.Printf("Warning: Failed to create balance request for merchant %d: %v", merchantID, err)
+			continue
+		}
+
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			log.Printf("Warning: Failed to fetch balance for merchant %d: %v", merchantID, err)
+			continue
+		}
+
+		if resp.StatusCode == http.StatusOK {
+			var balance struct {
+				PendingBalance int64 `json:"pending_balance"`
+			}
+			if err := json.NewDecoder(resp.Body).Decode(&balance); err != nil {
+				log.Printf("Warning: Failed to decode balance for merchant %d: %v", merchantID, err)
+			} else {
+				totalPending += balance.PendingBalance
+			}
+		}
+		resp.Body.Close()
+	}
+
+	return totalPending, nil
 }

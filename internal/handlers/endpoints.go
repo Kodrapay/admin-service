@@ -121,6 +121,17 @@ func (h *AdminHandler) TriggerSettlement(c *fiber.Ctx) error {
 	return c.SendStatus(fiber.StatusNoContent)
 }
 
+func (h *AdminHandler) GetPendingSettlements(c *fiber.Ctx) error {
+	totalPending, err := h.svc.GetTotalPendingSettlements(c.Context())
+	if err != nil {
+		return fiber.NewError(fiber.StatusInternalServerError, err.Error())
+	}
+	return c.JSON(map[string]interface{}{
+		"total_pending": totalPending,
+		"currency":      "NGN",
+	})
+}
+
 func (h *AdminHandler) ApproveMerchant(c *fiber.Ctx) error {
 	id, err := c.ParamsInt("id")
 	if err != nil {
@@ -151,6 +162,7 @@ func (h *AdminHandler) Register(app *fiber.App) {
 	admin.Get("/transactions/fraud", h.ListFraudulentTransactions) // New route for fraudulent transactions
 	admin.Post("/transactions/:reference/approve", h.ApproveTransaction)
 	admin.Post("/transactions/:reference/decline", h.DeclineTransaction)
+	admin.Get("/settlements/pending", h.GetPendingSettlements)
 	admin.Post("/settlements/trigger", h.TriggerSettlement)
 	admin.Get("/stats", h.Stats)
 }
